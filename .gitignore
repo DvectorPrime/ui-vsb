@@ -1,1 +1,11 @@
-models/
+config/config.local.php
+.env
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+vendor/
+.idea/
+.vscode/
+uploads/
+*.zip
