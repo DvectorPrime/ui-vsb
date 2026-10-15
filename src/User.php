@@ -81,6 +81,72 @@ class User
         return $row ? self::toPublic($row) : null;
     }
 
+    /**
+     * Retrieves all customer accounts with vehicle count, booking count,
+     * and their registered vehicles list (contract 2.8).
+     * @return array<int, array>
+     */
+    public function getAllCustomers(?string $q = null): array
+    {
+        $where = ["u.role = 'customer'"];
+        $params = [];
+
+        if ($q !== null && trim($q) !== '') {
+            $searchTerm = '%' . trim($q) . '%';
+            $where[] = "(u.full_name LIKE :q1 OR u.email LIKE :q2 OR u.phone LIKE :q3)";
+            $params[':q1'] = $searchTerm;
+            $params[':q2'] = $searchTerm;
+            $params[':q3'] = $searchTerm;
+        }
+
+        $whereClause = implode(' AND ', $where);
+
+        $sql = "SELECT u.user_id, u.full_name, u.email, u.phone, u.created_at,
+                       COUNT(DISTINCT v.vehicle_id) AS vehicle_count,
+                       COUNT(DISTINCT b.booking_id) AS booking_count
+                FROM users u
+                LEFT JOIN vehicles v ON u.user_id = v.user_id
+                LEFT JOIN bookings b ON u.user_id = b.user_id
+                WHERE {$whereClause}
+                GROUP BY u.user_id
+                ORDER BY u.user_id DESC";
+
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        $customers = $stmt->fetchAll();
+
+        if (empty($customers)) {
+            return [];
+        }
+
+        // Fetch all vehicles for these customers in a single batch query to prevent N+1
+        $userIds = array_column($customers, 'user_id');
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $vStmt = $this->pdo->prepare("SELECT * FROM vehicles WHERE user_id IN ({$placeholders}) ORDER BY vehicle_id ASC");
+        $vStmt->execute($userIds);
+        $allVehicles = $vStmt->fetchAll();
+
+        $vehiclesByUser = [];
+        foreach ($allVehicles as $vRow) {
+            $uid = (int) $vRow['user_id'];
+            $vehiclesByUser[$uid][] = Vehicle::toPublic($vRow);
+        }
+
+        return array_map(function (array $c) use ($vehiclesByUser): array {
+            $uid = (int) $c['user_id'];
+            return [
+                'user_id'       => $uid,
+                'full_name'     => (string) $c['full_name'],
+                'email'         => (string) $c['email'],
+                'phone'         => (string) $c['phone'],
+                'created_at'    => (string) $c['created_at'],
+                'vehicle_count' => (int) $c['vehicle_count'],
+                'booking_count' => (int) $c['booking_count'],
+                'vehicles'      => $vehiclesByUser[$uid] ?? [],
+            ];
+        }, $customers);
+    }
+
     /** Turns a database row into the User object the API returns. */
     public static function toPublic(array $row): array
     {
