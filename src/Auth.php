@@ -10,7 +10,9 @@ class Auth
     /** Starts a logged-in session for $user (a row from the users table). */
     public static function login(array $user): void
     {
-        session_regenerate_id(true);   // new session id stops session fixation
+        if (!headers_sent() && session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);   // new session id stops session fixation
+        }
         $_SESSION['user_id']   = (int) $user['user_id'];
         $_SESSION['role']      = $user['role'];
         $_SESSION['full_name'] = $user['full_name'];

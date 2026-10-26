@@ -30,9 +30,15 @@ vsb_define('DB_PASS', '');
 // this project lives in, compared with the web server's document root.
 $vsbRoot = str_replace('\\', '/', realpath(__DIR__ . '/..'));
 $vsbDocRoot = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT'] ?? '') ?: '');
-$vsbBase = ($vsbDocRoot !== '' && strpos($vsbRoot, $vsbDocRoot) === 0)
-    ? substr($vsbRoot, strlen($vsbDocRoot))
-    : '';
+$vsbScript = $_SERVER['SCRIPT_NAME'] ?? '';
+
+if (strpos($vsbScript, '/ui-vsb/') === 0) {
+    $vsbBase = '/ui-vsb/';
+} elseif ($vsbDocRoot !== '' && strpos($vsbRoot, $vsbDocRoot) === 0) {
+    $vsbBase = substr($vsbRoot, strlen($vsbDocRoot));
+} else {
+    $vsbBase = '/ui-vsb/';
+}
 vsb_define('BASE_URL', rtrim($vsbBase, '/') . '/');
 
 // ---- Booking rules (see docs/API_CONTRACT.md 2.5) ----

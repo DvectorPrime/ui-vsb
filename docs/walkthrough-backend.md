@@ -126,3 +126,89 @@ In high-concurrency systems, two customers might check a slot at the same second
 2. *What happens to customer funds if an admin rejects their booking?* Rejection automatically triggers `Payment::refund()`, updating the payment record to `refunded`, releasing the workshop bay, and recording a status history audit entry.
 3. *How do you avoid performance bottlenecks when loading customers with their vehicles?* Instead of querying vehicles in a loop for each customer, we extract all customer IDs and fetch all vehicles in a single batch query, grouping them in memory.
 
+
+
+---
+
+## B4: Simulated Payment & Gateway Polymorphism
+
+### Files and what they do
+| File | What it does |
+|---|---|
+| `src/PaymentGatewayInterface.php` | Defines the contract `charge(array $card, float $amount): array` for swappable payment processors. |
+| `src/SimulatedPaymentGateway.php` | Implements the interface, evaluates test cards per contract 2.9 (4242 success, 0002 decline, 9995 insufficient funds, expired check, Luhn check), and simulates ~900ms realistic network latency without external keys or network calls. |
+| `src/Payment.php` | Records payment attempts (both success and failed), looks up payments by booking, aggregates successful revenue, and handles refund status updates. |
+| `api/payment.php` | Customer endpoint (`POST`) for charging a booking hold. Validates 16 digits, Luhn checksum, expiry, and CVV; ensures only `card_last4` is persisted; transitions booking to `pending_approval` on success or logs failed audit rows. |
+| `tests/test_b4.php` | Automated test suite verifying card test matrices, Luhn validation, double-payment prevention, IDOR protection, hold expiry, and database privacy auditing. |
+
+### Key ideas (say these in the demo)
+- **Polymorphism via Interface (`PaymentGatewayInterface`)**: The booking engine does not couple itself to a specific bank or gateway. It depends on `PaymentGatewayInterface`. In production, a `PaystackGateway` or `FlutterwaveGateway` could be swapped in without modifying any booking code (Dependency Inversion Principle).
+- **PCI-DSS Compliance (Zero Card Storage)**: We NEVER store the 16-digit card number or 3-digit CVV in our database, session, or error logs. Only the non-sensitive `card_last4` is kept for customer receipt identification.
+- **Failures are Recorded for Auditing**: Unlike invalid format requests (which return HTTP 400 with no database write), gateway declines (0002, 9995, expired) write a row with `status = 'failed'` and the decline reason, allowing workshop admins to see payment attempt histories in the audit reports.
+
+### Likely examiner questions
+1. *Why use an interface for the payment gateway?* Interfaces decouple high-level business logic from low-level payment providers. This allows the system to use `SimulatedPaymentGateway` in demo environments and seamlessly swap to a real bank gateway without altering `api/payment.php`.
+2. *Why does a bad Luhn return HTTP 400 but a declined card returns HTTP 422?* HTTP 400 Bad Request indicates a client syntax/formatting mistake (e.g., typing a digit wrong). HTTP 422 Unprocessable Content indicates valid syntax, but the payment gateway declined the transaction due to business rules (e.g., insufficient balance).
+3. *How do you ensure credit card information is not compromised?* Full card numbers and CVVs exist only in memory during the request. Only `card_last4` is written to MySQL, eliminating data breach liability.
+
+---
+
+## B6: Architecture Summary, Demo Scripts & Final Audit
+
+### Comprehensive Class Directory (`src/`)
+* **`ApiResponse`**: Formats all HTTP API outputs into the standardized JSON envelope (`success`, `message`, `data`, `errors`), sets HTTP status codes and headers, and halts script execution.
+* **`Auth`**: Manages session state, handles login credential registration, and provides dual-mode guards (`requireLogin`, `requireRole`) that return JSON 401/403 for API routes and HTTP redirects for UI pages.
+* **`Booking`**: Central domain model that orchestrates slot generation, concurrency locking (`SELECT ... FOR UPDATE`), 30-minute hold expiry, admin status advancement, and dashboard metrics.
+* **`Database`**: Singleton PDO connection manager ensuring exactly one persistent MySQL connection per PHP process with prepared statement emulation disabled.
+* **`Payment`**: Handles recording of payment transactions, query filtering for administrative reports, revenue summation, and automated refund management.
+* **`PaymentGatewayInterface`**: Abstract contract enforcing gateway interoperability and polymorphism across all payment providers.
+* **`Service`**: Catalogue domain model managing workshop repair services, typecasting prices to floats, and providing soft-deactivation when historical bookings exist.
+* **`SimulatedPaymentGateway`**: Concrete implementation of the gateway interface providing realistic test card behavior, Luhn validation, and latency simulation.
+* **`User`**: Account domain model handling customer registration with server-side validation, secure login with bcrypt password verification, and optimized anti-N+1 customer vehicle loading.
+* **`Vehicle`**: Vehicle domain model managing customer car registrations, uppercase plate formatting, ownership validation (`belongsTo`), and booking referential integrity.
+
+### API Endpoints Directory (`api/`)
+* **`api/auth/register.php`**: Creates new customer accounts with role forced to `customer` and automatically establishes an authenticated session.
+* **`api/auth/login.php`**: Authenticates users with constant-time bcrypt verification and returns role-specific dashboard redirects.
+* **`api/auth/logout.php`**: Destroys server sessions and clears session cookies.
+* **`api/auth/me.php`**: Returns the currently authenticated user profile for frontend UI hydration.
+* **`api/services.php`**: Returns all active workshop services for customer booking catalogues.
+* **`api/vehicles.php`**: Provides customer vehicle listing, registration (`action=add`), and safe deletion (`action=delete`).
+* **`api/slots.php`**: Asynchronous Fetch API endpoint delivering real-time bay capacity counts for any chosen date.
+* **`api/book.php`**: Atomically claims a workshop bay for 30 minutes with snapshot pricing and concurrency locking.
+* **`api/payment.php`**: Charges simulated cards, validates Luhn checksums, and transitions bookings to `pending_approval`.
+* **`api/bookings.php`**: Returns customer booking histories or single booking detail with full audit history (`?ref=`).
+* **`api/dashboard.php`**: Aggregates customer KPI metrics (vehicle count, active bookings, next appointment).
+* **`api/admin/dashboard.php`**: Computes workshop administrative KPIs (bookings today, pending approvals, total revenue, active services).
+* **`api/admin/services.php`**: Provides admin catalogue management (create, update, delete/deactivate).
+* **`api/admin/bookings.php`**: Filterable administrative booking table with approve/reject workflow actions.
+* **`api/admin/status.php`**: Advances workshop service status strictly forward along the 5-step stepper.
+* **`api/admin/customers.php`**: Searchable customer overview with aggregated vehicle and booking statistics.
+* **`api/admin/payments.php`**: Financial audit log of all successful, failed, and refunded payment transactions.
+* **`api/admin/records.php`**: Search engine for historical vehicle maintenance logs across customer and registration filters.
+
+---
+
+### "How to Explain the Booking & Payment Flow in 60 Seconds" (Demo Script)
+
+> "When a customer selects a date and service on our booking page, our frontend makes an asynchronous **Fetch** call to `api/slots.php`. The backend computes real-time bay capacity by counting active bookings and expiring any unpaid holds older than 30 minutes.
+>
+> When the customer clicks 'Book', `api/book.php` initiates an **ACID transaction** with `SELECT ... FOR UPDATE` in MySQL. This places an InnoDB exclusive lock on the chosen slot. If another customer tries to claim the same bay at the same second, the second transaction is blocked until capacity is evaluated. If the bay is full, it rolls back and returns **HTTP 409 Conflict**. If available, it places a temporary 30-minute hold with snapshot pricing.
+>
+> Next, the customer enters card details on `api/payment.php`. The backend validates the card using the **Luhn algorithm**, and delegates charging to our **SimulatedPaymentGateway** via `PaymentGatewayInterface`. Only the last 4 digits are saved to MySQL—card numbers and CVVs are never persisted. A successful payment advances the booking to `pending_approval`, while a declined card records a failed attempt for audit tracking."
+
+---
+
+### Course Requirements Compliance Checklist
+
+| Requirement | Satisfied? | Implementation Details |
+|---|:---:|---|
+| **HTML, CSS, vanilla JS, PHP 8 (OOP), MySQL** | ✅ Yes | Zero frameworks. PHP 8 strict types, OOP classes, InnoDB MySQL. |
+| **No Frameworks** | ✅ Yes | No Laravel, React, Vue, Bootstrap, Tailwind, Composer, or npm. |
+| **Asynchronous Fetch API Communication** | ✅ Yes | `api/slots.php`, `api/book.php`, `api/payment.php` designed for Fetch. |
+| **PHP OOP Domain Classes** | ✅ Yes | 10 classes in `src/` (`Booking`, `User`, `Payment`, etc.). |
+| **Real MySQL Storage & Retrieval** | ✅ Yes | `ui_vsb_db` with 6 relational tables, FKs, transactions, indexes. |
+| **At least one API Endpoint** | ✅ Yes | 17 RESTful JSON endpoints with standard envelopes. |
+| **Simulated Payment Only** | ✅ Yes | `SimulatedPaymentGateway` with test card matrices and simulated latency. |
+| **Demonstrates Successful & Failed Operations**| ✅ Yes | Duplicate plate (409), bad password (401), slot full (409), card declined (422), insufficient funds (422), hold expired (409), backward stepper (409). |
+| **Submitted SQL File (`database/ui_vsb.sql`)** | ✅ Yes | Idempotent, drops tables, sets schema, includes rich demo data. |

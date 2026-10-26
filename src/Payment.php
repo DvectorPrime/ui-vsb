@@ -1,9 +1,7 @@
 <?php
 /**
  * Payment
- * Model for recording and querying payments and issuing refunds (contract 2.4, 2.7, 2.8).
- * Note: Card charging & gateway simulation belongs to Phase B4; this class provides
- * the data querying, audit logging, and refund operations needed by Phase B5.
+ * Model for recording and querying payments and issuing refunds (contract 2.4, 2.7, 2.8, B4).
  */
 class Payment
 {
@@ -12,6 +10,48 @@ class Payment
     public function __construct()
     {
         $this->pdo = Database::getInstance()->getConnection();
+    }
+
+    /**
+     * Records a payment attempt (success or failed) in the payments table.
+     * Only stores card_last4; full card numbers and CVV are NEVER stored.
+     */
+    public function record(
+        int $bookingId,
+        string $transactionRef,
+        float $amount,
+        string $status,
+        ?string $failureReason = null,
+        ?string $cardLast4 = null,
+        string $method = 'test_card'
+    ): int {
+        $sql = "INSERT INTO payments
+                (booking_id, transaction_ref, amount, method, card_last4, status, failure_reason)
+                VALUES (:bid, :txn, :amt, :method, :last4, :status, :reason)";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([
+            ':bid'    => $bookingId,
+            ':txn'    => $transactionRef,
+            ':amt'    => $amount,
+            ':method' => $method,
+            ':last4'  => $cardLast4,
+            ':status' => $status,
+            ':reason' => $failureReason,
+        ]);
+
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * Finds a payment record by its unique transaction reference.
+     */
+    public function findByTransactionRef(string $txnRef): ?array
+    {
+        $sql = "SELECT * FROM payments WHERE transaction_ref = :txn LIMIT 1";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([':txn' => $txnRef]);
+        $row = $stmt->fetch();
+        return $row ?: null;
     }
 
     /**

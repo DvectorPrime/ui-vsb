@@ -767,6 +767,11 @@ class Booking
         return $out;
     }
 
+    public function findById(int $id): ?array
+    {
+        return $this->getRawById($id);
+    }
+
     private function getRawById(int $id): ?array
     {
         $stmt = $this->pdo->prepare('SELECT * FROM bookings WHERE booking_id = :id LIMIT 1');

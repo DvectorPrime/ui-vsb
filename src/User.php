@@ -72,6 +72,14 @@ class User
         return password_verify($password, $row['password_hash']) ? $row : null;
     }
 
+    public function findByEmail(string $email): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
+        $stmt->execute([':email' => strtolower(trim($email))]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
     /** Public user shape from the contract (never includes the password hash). */
     public function findById(int $id): ?array
     {
