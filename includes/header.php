@@ -24,12 +24,12 @@ function isNavActive(string $slug): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?php echo htmlspecialchars($pageTitle); ?></title>
-  <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/style.css">
+  <link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/style.css?v=<?php echo @filemtime(__DIR__ . '/../assets/css/style.css') ?: time(); ?>">
   <script>
     window.APP_BASE = '<?php echo BASE_URL; ?>';
   </script>
-  <script src="<?php echo BASE_URL; ?>assets/js/config.js" defer></script>
-  <script src="<?php echo BASE_URL; ?>assets/js/app.js" defer></script>
+  <script src="<?php echo BASE_URL; ?>assets/js/config.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/config.js') ?: time(); ?>" defer></script>
+  <script src="<?php echo BASE_URL; ?>assets/js/app.js?v=<?php echo @filemtime(__DIR__ . '/../assets/js/app.js') ?: time(); ?>" defer></script>
   <?php if (!empty($pageScripts) && is_array($pageScripts)): ?>
     <?php foreach ($pageScripts as $script): ?>
       <script src="<?php echo BASE_URL . ltrim($script, '/'); ?>" defer></script>

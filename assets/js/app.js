@@ -199,7 +199,16 @@
   VSB.formatDate = function (dateStr) {
     if (!dateStr) return '—';
     try {
-      const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00'));
+      let clean = String(dateStr).trim();
+      if (!clean.includes('T')) {
+        if (clean.includes(' ')) {
+          clean = clean.replace(' ', 'T');
+        } else {
+          clean = clean + 'T00:00:00';
+        }
+      }
+      const d = new Date(clean);
+      if (isNaN(d.getTime())) return String(dateStr);
       return d.toLocaleDateString('en-GB', {
         weekday: 'short',
         day: 'numeric',
@@ -207,14 +216,19 @@
         year: 'numeric'
       });
     } catch (e) {
-      return dateStr;
+      return String(dateStr);
     }
   };
 
   VSB.formatDateTime = function (isoStr) {
     if (!isoStr) return '—';
     try {
-      const d = new Date(isoStr.replace(' ', 'T'));
+      let clean = String(isoStr).trim();
+      if (!clean.includes('T') && clean.includes(' ')) {
+        clean = clean.replace(' ', 'T');
+      }
+      const d = new Date(clean);
+      if (isNaN(d.getTime())) return String(isoStr);
       return d.toLocaleString('en-GB', {
         day: 'numeric',
         month: 'short',
@@ -223,7 +237,7 @@
         minute: '2-digit'
       });
     } catch (e) {
-      return isoStr;
+      return String(isoStr);
     }
   };
 

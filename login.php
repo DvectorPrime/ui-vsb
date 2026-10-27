@@ -29,14 +29,6 @@ require_once __DIR__ . '/includes/header.php';
   <p class="muted mt" style="text-align: center;">
     No account yet? <a href="<?php echo BASE_URL; ?>register.php">Register here</a>
   </p>
-
-  <div class="demo">
-    <b>Demo Accounts</b><br>
-    <div style="margin-top: 6px; display: flex; flex-direction: column; gap: 6px;">
-      <button type="button" class="btn ghost sm" id="fillAdmin">Use Admin: admin@ui.edu.ng</button>
-      <button type="button" class="btn ghost sm" id="fillCustomer">Use Customer: customer@ui.edu.ng</button>
-    </div>
-  </div>
 </div>
 
 <script>
@@ -46,16 +38,6 @@ document.addEventListener('DOMContentLoaded', function () {
   const btn = document.getElementById('loginBtn');
   const emailInput = document.getElementById('email');
   const pwInput = document.getElementById('password');
-
-  // Quick fill demo buttons
-  document.getElementById('fillAdmin').onclick = () => {
-    emailInput.value = 'admin@ui.edu.ng';
-    pwInput.value = 'Admin@123';
-  };
-  document.getElementById('fillCustomer').onclick = () => {
-    emailInput.value = 'customer@ui.edu.ng';
-    pwInput.value = 'Customer@123';
-  };
 
   form.onsubmit = async function (e) {
     e.preventDefault();

@@ -32,7 +32,14 @@ echo "=== STARTING PHASE B2 & B3 AUTOMATED TESTS ===\n\n";
 
 // Get seed customer (id 2) and admin (id 1)
 $customerStmt = $pdo->query("SELECT user_id FROM users WHERE email = 'customer@ui.edu.ng' LIMIT 1");
-$customerId = (int) $customerStmt->fetchColumn();
+$customerId = (int) ($customerStmt ? $customerStmt->fetchColumn() : 0);
+$tempCustomerCreated = false;
+if ($customerId === 0) {
+    $hash = password_hash('Customer@123', PASSWORD_DEFAULT);
+    $pdo->prepare("INSERT INTO users (full_name, email, phone, password_hash, role) VALUES ('Test Customer', 'test_b2_b3@ui.edu.ng', '08012345678', ?, 'customer')")->execute([$hash]);
+    $customerId = (int) $pdo->lastInsertId();
+    $tempCustomerCreated = true;
+}
 
 $adminStmt = $pdo->query("SELECT user_id FROM users WHERE email = 'admin@ui.edu.ng' LIMIT 1");
 $adminId = (int) $adminStmt->fetchColumn();
@@ -249,6 +256,9 @@ $pdo->exec("DELETE FROM status_history WHERE booking_id IN ({$bookingId1}, " . (
 $pdo->exec("DELETE FROM bookings WHERE booking_id IN ({$bookingId1}, " . (int)$book2['data']['booking_id'] . ")");
 $pdo->exec("DELETE FROM vehicles WHERE vehicle_id = {$testVehicleId}");
 $pdo->exec("DELETE FROM services WHERE service_id = {$testServiceId}");
+if ($tempCustomerCreated) {
+    $pdo->prepare("DELETE FROM users WHERE user_id = ?")->execute([$customerId]);
+}
 
 echo "\n============================================\n";
 echo "SUMMARY: Passed: {$pass} | Failed: {$fail}\n";

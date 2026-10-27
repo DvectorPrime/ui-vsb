@@ -48,11 +48,30 @@ function httpReq(string $path, string $method = 'GET', ?array $data = null, bool
 
 echo "=== HTTP API PAYMENT INTEGRATION TEST ===\n";
 
-// 1. Login as customer
+// 1. Login as customer (or register temporary tester if DB is clean)
 $login = httpReq('api/auth/login.php', 'POST', [
     'email'    => 'customer@ui.edu.ng',
     'password' => 'Customer@123',
 ]);
+$tempCustomerEmail = null;
+
+if ($login['code'] !== 200) {
+    $tempCustomerEmail = 'pay_tester_' . time() . '@ui.edu.ng';
+    $reg = httpReq('api/auth/register.php', 'POST', [
+        'full_name'        => 'Payment Tester',
+        'email'            => $tempCustomerEmail,
+        'phone'            => '08011223344',
+        'password'         => 'Customer@123',
+        'confirm_password' => 'Customer@123'
+    ]);
+    if ($reg['code'] === 201) {
+        $login = httpReq('api/auth/login.php', 'POST', [
+            'email'    => $tempCustomerEmail,
+            'password' => 'Customer@123',
+        ]);
+    }
+}
+
 echo "1. Login status: {$login['code']}\n";
 if ($login['code'] !== 200) {
     die("Login failed: " . json_encode($login['body']) . "\n");
@@ -147,6 +166,23 @@ echo "6. Pay again status: {$payAgain['code']} (Expected: 409)\n";
 
 if (file_exists($cookieFile)) {
     unlink($cookieFile);
+}
+
+// Clean up temporary tester records if created
+if ($tempCustomerEmail !== null) {
+    require_once __DIR__ . '/../config/config.php';
+    require_once __DIR__ . '/../src/Database.php';
+    $pdo = Database::getInstance()->getConnection();
+    $uRow = $pdo->prepare("SELECT user_id FROM users WHERE email = ?");
+    $uRow->execute([$tempCustomerEmail]);
+    $uId = $uRow->fetchColumn();
+    if ($uId) {
+        $pdo->prepare("DELETE FROM payments WHERE booking_id IN (SELECT booking_id FROM bookings WHERE user_id = ?)")->execute([$uId]);
+        $pdo->prepare("DELETE FROM status_history WHERE booking_id IN (SELECT booking_id FROM bookings WHERE user_id = ?)")->execute([$uId]);
+        $pdo->prepare("DELETE FROM bookings WHERE user_id = ?")->execute([$uId]);
+        $pdo->prepare("DELETE FROM vehicles WHERE user_id = ?")->execute([$uId]);
+        $pdo->prepare("DELETE FROM users WHERE user_id = ?")->execute([$uId]);
+    }
 }
 
 if ($badLuhn['code'] === 400 && $decline['code'] === 422 && $success['code'] === 200 && $payAgain['code'] === 409) {

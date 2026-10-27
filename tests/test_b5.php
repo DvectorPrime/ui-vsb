@@ -32,10 +32,27 @@ $adminStmt = $pdo->query("SELECT user_id FROM users WHERE role = 'admin' LIMIT 1
 $adminId = (int) $adminStmt->fetchColumn();
 
 $customerStmt = $pdo->query("SELECT user_id FROM users WHERE email = 'customer@ui.edu.ng' LIMIT 1");
-$customerId = (int) $customerStmt->fetchColumn();
+$customerId = (int) ($customerStmt ? $customerStmt->fetchColumn() : 0);
+$tempCust5 = false;
+
+if ($customerId === 0) {
+    $custRow = $pdo->query("SELECT user_id FROM users WHERE email = 'cust_b5@ui.edu.ng' LIMIT 1")->fetch();
+    if (!$custRow) {
+        $hash = password_hash('CustPass@123', PASSWORD_DEFAULT);
+        $pdo->prepare("INSERT INTO users (full_name, email, phone, password_hash, role) VALUES ('Customer Five', 'cust_b5@ui.edu.ng', '08033221100', ?, 'customer')")->execute([$hash]);
+        $customerId = (int) $pdo->lastInsertId();
+    } else {
+        $customerId = (int) $custRow['user_id'];
+    }
+    $tempCust5 = true;
+}
 
 $vehStmt = $pdo->query("SELECT vehicle_id FROM vehicles WHERE user_id = {$customerId} LIMIT 1");
-$vehicleId = (int) $vehStmt->fetchColumn();
+$vehicleId = (int) ($vehStmt ? $vehStmt->fetchColumn() : 0);
+if ($vehicleId === 0) {
+    $pdo->prepare("INSERT INTO vehicles (user_id, reg_number, make, model, year) VALUES (?, 'B5-VEH-01', 'Toyota', 'Hilux', 2020)")->execute([$customerId]);
+    $vehicleId = (int) $pdo->lastInsertId();
+}
 
 $svcStmt = $pdo->query("SELECT service_id, price FROM services WHERE is_active = 1 LIMIT 1");
 $svcRow = $svcStmt->fetch();
@@ -149,7 +166,8 @@ assertTest('Customer record has vehicle_count and booking_count', isset($foundCu
 assertTest('Customer record has nested vehicles array', is_array($foundCustomer['vehicles'] ?? null) && count($foundCustomer['vehicles']) >= 1);
 
 // Test customer search filter
-$searchRes = $userModel->getAllCustomers('customer@ui.edu.ng');
+$targetEmail = (string) $pdo->query("SELECT email FROM users WHERE user_id = {$customerId}")->fetchColumn();
+$searchRes = $userModel->getAllCustomers($targetEmail);
 assertTest('Search by email returns matching customer', count($searchRes) === 1 && $searchRes[0]['user_id'] === $customerId);
 
 // -------------------------------------------------------------------------
@@ -176,6 +194,10 @@ assertTest('Customer dashboard has active_bookings count', isset($custDashboard[
 $pdo->exec("DELETE FROM payments WHERE booking_id IN ({$bidApprove}, {$bidReject})");
 $pdo->exec("DELETE FROM status_history WHERE booking_id IN ({$bidApprove}, {$bidReject})");
 $pdo->exec("DELETE FROM bookings WHERE booking_id IN ({$bidApprove}, {$bidReject})");
+if ($tempCust5) {
+    $pdo->exec("DELETE FROM vehicles WHERE user_id = {$customerId}");
+    $pdo->exec("DELETE FROM users WHERE user_id = {$customerId}");
+}
 
 echo "\n============================================\n";
 echo "B5 SUMMARY: Passed: {$pass} | Failed: {$fail}\n";

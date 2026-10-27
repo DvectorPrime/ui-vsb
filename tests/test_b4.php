@@ -27,8 +27,20 @@ echo "=== STARTING PHASE B4 (SIMULATED PAYMENT) TESTS ===\n\n";
 // Setup test users
 $userModel = new User();
 $cust1 = $userModel->findByEmail('customer@ui.edu.ng');
+$tempCust1 = false;
 if (!$cust1) {
-    die("Seed customer customer@ui.edu.ng missing. Re-import database/ui_vsb.sql first.\n");
+    $cust1 = $userModel->findByEmail('cust1_b4@ui.edu.ng');
+    if (!$cust1) {
+        $res = $userModel->register([
+            'full_name'        => 'First Customer B4',
+            'email'            => 'cust1_b4@ui.edu.ng',
+            'phone'            => '08099887711',
+            'password'         => 'Cust1Pass@123',
+            'confirm_password' => 'Cust1Pass@123',
+        ]);
+        $cust1 = $res['user'] ?? $userModel->findByEmail('cust1_b4@ui.edu.ng');
+    }
+    $tempCust1 = true;
 }
 $cust1Id = (int) $cust1['user_id'];
 
@@ -42,10 +54,9 @@ if (!$cust2) {
         'password'         => 'Cust2Pass@123',
         'confirm_password' => 'Cust2Pass@123',
     ]);
-    $cust2Id = (int) ($res['user']['user_id'] ?? $res['data']['user']['user_id'] ?? 0);
-} else {
-    $cust2Id = (int) $cust2['user_id'];
+    $cust2 = $res['user'] ?? $userModel->findByEmail('cust2_b4@ui.edu.ng');
 }
+$cust2Id = (int) $cust2['user_id'];
 
 // Get or add vehicle for cust1
 $vehModel = new Vehicle();
@@ -57,7 +68,7 @@ if (empty($vehList)) {
         'model'      => 'Camry',
         'year'       => 2021,
     ]);
-    $veh1Id = (int) $vRes['data']['vehicle']['vehicle_id'];
+    $veh1Id = (int) ($vRes['vehicle']['vehicle_id'] ?? $vRes['data']['vehicle']['vehicle_id'] ?? 0);
 } else {
     $veh1Id = (int) $vehList[0]['vehicle_id'];
 }
@@ -212,6 +223,16 @@ $bookingModel->expireStale();
 
 $staleBookingRaw = $bookingModel->findById($staleBookingId);
 assertCondition($staleBookingRaw['booking_status'] === 'cancelled', 'Stale booking was cancelled by expireStale()');
+
+// Clean up test bookings and vehicles
+$pdo->query("DELETE FROM payments WHERE booking_id IN ({$bookingId1}, {$staleBookingId})");
+$pdo->query("DELETE FROM status_history WHERE booking_id IN ({$bookingId1}, {$staleBookingId})");
+$pdo->query("DELETE FROM bookings WHERE booking_id IN ({$bookingId1}, {$staleBookingId})");
+$pdo->query("DELETE FROM vehicles WHERE vehicle_id = {$veh1Id}");
+$pdo->query("DELETE FROM users WHERE email = 'cust2_b4@ui.edu.ng'");
+if ($tempCust1) {
+    $pdo->query("DELETE FROM users WHERE email = 'cust1_b4@ui.edu.ng'");
+}
 
 echo "\n============================================\n";
 echo "B4 SUMMARY: Passed: {$passCount} | Failed: {$failCount}\n";
