@@ -22,9 +22,10 @@ $vsbIsApi = strpos($_SERVER['SCRIPT_NAME'] ?? '', '/api/') !== false;
 ini_set('display_errors', $vsbIsApi ? '0' : '1');
 ini_set('log_errors', '1');
 
-// Session cookie flags: httponly stops JavaScript reading the cookie,
-// samesite=Lax blocks it being sent on cross-site POSTs.
+// Dedicated session name & secure cookie parameters:
+// httponly stops JavaScript reading the cookie, samesite=Lax blocks cross-site POSTs.
 if (session_status() === PHP_SESSION_NONE) {
+    session_name('UI_VSB_SESSION');
     session_set_cookie_params([
         'lifetime' => 0,
         'path'     => '/',
